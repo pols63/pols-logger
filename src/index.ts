@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { PRecord } from 'pols-utils/constants'
 import { PDate } from 'pols-date'
+import { PRecord } from 'pols-utils'
 
 type PThemes = 'INFO' | 'WARNING' | 'ERROR' | 'DEBUG' | 'SYSTEM'
 
