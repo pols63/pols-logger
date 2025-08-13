@@ -1,9 +1,15 @@
 import fs from 'fs'
 import path from 'path'
-import { PDate } from 'pols-date'
-import { PRecord } from 'pols-utils'
+import { PRecord, PUtilsDate } from 'pols-utils'
 
-type PThemes = 'INFO' | 'WARNING' | 'ERROR' | 'DEBUG' | 'SYSTEM'
+export enum PThemes {
+	INFO = 'INFO',
+	WARNING = 'WARNING',
+	ERROR = 'ERROR',
+	DEBUG = 'DEBUG',
+	SYSTEM = 'SYSTEM',
+	FATAL = 'FATAL',
+}
 
 export type PLoggerShowInParams = boolean | {
 	info?: boolean
@@ -11,6 +17,7 @@ export type PLoggerShowInParams = boolean | {
 	error?: boolean
 	debug?: boolean
 	system?: boolean
+	fatal?: boolean
 }
 
 export type PLoggerShowInConfig = {
@@ -20,7 +27,10 @@ export type PLoggerShowInConfig = {
 
 export type PLoggerParams = {
 	destinationPath?: string
-	fileName?: () => string
+	fileName?: ({ theme, now }: {
+		theme?: PThemes
+		now?: Date
+	}) => string
 	showIn?: PLoggerShowInConfig
 }
 
@@ -36,17 +46,18 @@ const check = (theme: PThemes, value: null | undefined | PLoggerShowInParams, de
 	if (value == null) return def
 	if (typeof value == 'boolean') return value
 	switch (theme) {
-		case 'INFO': return value.info
-		case 'WARNING': return value.warning
-		case 'ERROR': return value.error
-		case 'DEBUG': return value.debug
-		case 'SYSTEM': return value.system
+		case PThemes.INFO: return value.info
+		case PThemes.WARNING: return value.warning
+		case PThemes.ERROR: return value.error
+		case PThemes.DEBUG: return value.debug
+		case PThemes.SYSTEM: return value.system
+		case PThemes.FATAL: return value.fatal
 	}
 }
 
 const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, exit = false, tags }: PLoggerLogParams, executeEvent = true) => {
-	const now = new PDate
-	const nowString = now.toString('@dd/@mm/@y @hh:@ii:@ss.@lll')
+	const now = new Date
+	const nowString = PUtilsDate.format(now, '@dd/@mm/@y @hh:@ii:@ss.@lll')
 
 	const headers: string[] = [`[${theme}]`, nowString, '::', label]
 	if (description) headers.push('::', description)
@@ -81,7 +92,7 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 
 	/* Por defecto, muestra el mensaje en consola */
 	if (check(theme, pLogger.showIn?.console, true)) {
-		if (theme == 'ERROR') {
+		if ([].includes(theme)) {
 			console.error(headers.join(' '))
 			if (textBody.length) console.error(textBody.join('\n'))
 		} else {
@@ -92,7 +103,7 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 
 	/* Mensaje en archivo */
 	if (check(theme, pLogger.showIn?.file, false)) {
-		const fileName = pLogger.fileName?.() ?? `LOGS ${now.toString('@y-@mm-@dd')}.log`
+		const fileName = pLogger.fileName?.({ theme, now }) ?? `LOG_${PUtilsDate.format(now, '@y-@mm-@dd')}.log`
 		if (!pLogger.destinationPath) throw new Error(`La propiedad 'destinationPath' es requerida si la entrada debe ir a un archivo`)
 		const filePath = path.join(pLogger.destinationPath, fileName)
 
@@ -117,7 +128,7 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 		try {
 			pLogger.onEntryFinish?.({ label, description, body, exit, tags })
 		} catch (error) {
-			logger('ERROR', pLogger, {label: 'PLOGGER', description: 'Error al ejecutar el evento "onEntryFinish"', body: error}, false)
+			logger(PThemes.ERROR, pLogger, { label: 'PLOGGER', description: 'Error al ejecutar el evento "onEntryFinish"', body: error }, false)
 		}
 	}
 
@@ -128,7 +139,7 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 export class PLogger {
 	destinationPath?: string
 	showIn?: PLoggerShowInConfig
-	fileName?: () => string
+	fileName?: PLoggerParams['fileName']
 	declare onEntryFinish?: (params: PLoggerLogParams) => void
 
 	constructor(params?: PLoggerParams) {
@@ -138,22 +149,26 @@ export class PLogger {
 	}
 
 	info(params: PLoggerLogParams) {
-		logger('INFO', this, params)
+		logger(PThemes.INFO, this, params)
 	}
 
 	warning(params: PLoggerLogParams) {
-		logger('WARNING', this, params)
+		logger(PThemes.WARNING, this, params)
 	}
 
 	error(params: PLoggerLogParams) {
-		logger('ERROR', this, params)
+		logger(PThemes.ERROR, this, params)
 	}
 
 	debug(params: PLoggerLogParams) {
-		logger('DEBUG', this, params)
+		logger(PThemes.DEBUG, this, params)
 	}
 
 	system(params: PLoggerLogParams) {
-		logger('SYSTEM', this, params)
+		logger(PThemes.SYSTEM, this, params)
+	}
+
+	fatal(params: PLoggerLogParams) {
+		logger(PThemes.FATAL, this, { ...params, exit: true })
 	}
 }
