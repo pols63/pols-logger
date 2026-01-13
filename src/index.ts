@@ -28,8 +28,8 @@ export type PLoggerShowInConfig = {
 export type PLoggerParams = {
 	destinationPath?: string
 	fileName?: ({ theme, now }: {
-		theme?: PThemes
-		now?: Date
+		theme: PThemes
+		now: Date
 	}) => string
 	showIn?: PLoggerShowInConfig
 }

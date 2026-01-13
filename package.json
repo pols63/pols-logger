@@ -30,6 +30,6 @@
 		"typescript-eslint": "^8.11.0"
 	},
 	"dependencies": {
-		"pols-utils": "^5.9.0"
+		"pols-utils": "^5.9.3"
 	}
 }
