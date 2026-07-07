@@ -39,20 +39,21 @@ export type PLoggerLogParams = {
 	description?: string
 	tags?: string[]
 	body?: string | PRecord | unknown[] | Error
-	exit?: boolean
+	exit?: boolean | number
 }
 
-const check = (theme: PThemes, value: null | undefined | PLoggerShowInParams, def: boolean) => {
+const check = (theme: PThemes, value: null | undefined | PLoggerShowInParams, def: boolean): boolean => {
 	if (value == null) return def
 	if (typeof value == 'boolean') return value
 	switch (theme) {
-		case PThemes.INFO: return value.info
-		case PThemes.WARNING: return value.warning
-		case PThemes.ERROR: return value.error
-		case PThemes.DEBUG: return value.debug
-		case PThemes.SYSTEM: return value.system
-		case PThemes.FATAL: return value.fatal
+		case PThemes.INFO: return value.info ?? def
+		case PThemes.WARNING: return value.warning ?? def
+		case PThemes.ERROR: return value.error ?? def
+		case PThemes.DEBUG: return value.debug ?? def
+		case PThemes.SYSTEM: return value.system ?? def
+		case PThemes.FATAL: return value.fatal ?? def
 	}
+	return def
 }
 
 const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, exit = false, tags }: PLoggerLogParams, executeEvent = true) => {
@@ -69,7 +70,7 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 			if (b instanceof Error) {
 				return [
 					'Error: ' + b.message,
-					b.stack.replace(/^Error.*?\n/, '')
+					b.stack?.replace(/^Error.*?\n/, '') ?? ''
 				]
 			} else if (typeof b == 'string') {
 				return b
@@ -77,22 +78,40 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 				return b.toString()
 			} else if (b == null) {
 				return ''
+			} else if (typeof b == 'object') {
+				try {
+					return JSON.stringify(b, null, 2)
+				} catch {
+					return b.toString()
+				}
 			} else {
-				b.toString()
+				return String(b)
 			}
 		}).flat())
 	} else if (body instanceof Error) {
 		textBody.push(
 			'Error: ' + body.message,
-			body.stack.replace(/^Error.*?\n/, '')
+			body.stack?.replace(/^Error.*?\n/, '') ?? ''
 		)
 	} else if (typeof body == 'string') {
 		textBody.push(body)
+	} else if (typeof body == 'number') {
+		textBody.push((body as any).toString())
+	} else if (body == null) {
+		// do nothing
+	} else if (typeof body == 'object') {
+		try {
+			textBody.push(JSON.stringify(body, null, 2))
+		} catch {
+			textBody.push((body as any).toString())
+		}
+	} else {
+		textBody.push(String(body))
 	}
 
 	/* Por defecto, muestra el mensaje en consola */
 	if (check(theme, pLogger.showIn?.console, true)) {
-		if ([].includes(theme)) {
+		if ([PThemes.ERROR, PThemes.FATAL].includes(theme)) {
 			console.error(headers.join(' '))
 			if (textBody.length) console.error(textBody.join('\n'))
 		} else {
@@ -107,19 +126,24 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 		if (!pLogger.destinationPath) throw new Error(`La propiedad 'destinationPath' es requerida si la entrada debe ir a un archivo`)
 		const filePath = path.join(pLogger.destinationPath, fileName)
 
-		if (!fs.existsSync(pLogger.destinationPath)) {
-			/* Si no existe la carpeta para los logs, se intentará crear automáticamente */
-			try {
-				fs.mkdirSync(pLogger.destinationPath, { recursive: true })
-			} catch (error) {
-				throw new Error(`No fue posible crear el directorio '${pLogger.destinationPath}': ${error.message}`)
+		if (pLogger._dirChecked !== pLogger.destinationPath) {
+			if (!fs.existsSync(pLogger.destinationPath)) {
+				/* Si no existe la carpeta para los logs, se intentará crear automáticamente */
+				try {
+					fs.mkdirSync(pLogger.destinationPath, { recursive: true })
+				} catch (error) {
+					const errMsg = error instanceof Error ? error.message : String(error)
+					throw new Error(`No fue posible crear el directorio '${pLogger.destinationPath}': ${errMsg}`)
+				}
 			}
+			pLogger._dirChecked = pLogger.destinationPath
 		}
 
 		try {
 			fs.appendFileSync(filePath, `${headers.join(' ')}${textBody.length ? `\n${textBody.join('\n')}` : ''}\n`, { encoding: 'utf-8' })
 		} catch (error) {
-			throw new Error(`No fue posible registrar la entrada en el archivo '${filePath}': ${error.message}`)
+			const errMsg = error instanceof Error ? error.message : String(error)
+			throw new Error(`No fue posible registrar la entrada en el archivo '${filePath}': ${errMsg}`)
 		}
 	}
 
@@ -133,13 +157,17 @@ const logger = (theme: PThemes, pLogger: PLogger, { label, description, body, ex
 	}
 
 	/* Si se ha dado la opción, se sale del programa */
-	if (exit) process.exit()
+	if (exit) {
+		const exitCode = typeof exit === 'number' ? exit : (theme === PThemes.FATAL || theme === PThemes.ERROR ? 1 : 0)
+		process.exit(exitCode)
+	}
 }
 
 export class PLogger {
 	destinationPath?: string
 	showIn?: PLoggerShowInConfig
 	fileName?: PLoggerParams['fileName']
+	_dirChecked?: string
 	declare onEntryFinish?: (params: PLoggerLogParams) => void
 
 	constructor(params?: PLoggerParams) {
